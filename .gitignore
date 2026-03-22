@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Mise
+.mise.lock
