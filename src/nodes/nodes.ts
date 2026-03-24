@@ -41,7 +41,7 @@ export class ClockNode {
 export class NoteNode {
   constructor(
     private readonly frequency: number = 440,
-    private readonly duration: number = 1,
+    private readonly duration: number = 0.1,
   ) {}
 
   onTrigger(triggers: TriggerEvent[]): NoteEvent[] {

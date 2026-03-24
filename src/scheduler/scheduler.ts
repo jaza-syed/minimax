@@ -17,7 +17,7 @@ export class Scheduler {
     private tickInterval: number = 0.2,
     private scheduledUntil: number = 0,
     // Gives the engine some lead time before the first event is due
-    private startLeadTime: number = 0.01,
+    private startLeadTime: number = 0.005,
     private isRunning_: boolean = false,
   ) {}
 
@@ -26,6 +26,7 @@ export class Scheduler {
       return;
     }
     this.isRunning_ = true;
+    console.log('Starting');
     // Always starts from the start
     this.scheduledUntil = 0;
     this.transportStartTime = this.engine.now() + this.startLeadTime;
@@ -42,9 +43,11 @@ export class Scheduler {
   }
 
   async tick(): Promise<void> {
+    console.log('Ticking');
     if (!this.isRunning_) {
       return;
     }
+    console.log('Ticking');
 
     const endTime =
       this.engine.now() - this.transportStartTime + this.lookahead;
@@ -54,6 +57,7 @@ export class Scheduler {
     };
     const notes = this.audioGraph.schedule(scheduleWindow);
     for (const note of notes) {
+      console.log(`Schedule note:${note.time}`);
       note.time += this.transportStartTime;
       this.engine.scheduleNote(note);
     }
