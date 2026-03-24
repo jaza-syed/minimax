@@ -43,3 +43,13 @@ src/
 ├── scheduler/   # Scheduler and ticker
 └── ui/          # React components and React Flow canvas
 ```
+
+## Transport / context time setup
+- Scheduler: Keeps track of when the transport was started
+  in context time, and adds this to the transport time
+  - AudioGraph (Representation of what's been built).
+    The AudioGraph operates in **transport time**
+  - Engine (Wrapper round AudioContext for scheduling events)
+    The Engine operates in **context time**
+
+
