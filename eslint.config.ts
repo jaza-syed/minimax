@@ -17,6 +17,10 @@ export default tseslint.config(
         'error',
         { allowInterfaces: 'always' },
       ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_' },
+      ],
     },
   },
   prettier,

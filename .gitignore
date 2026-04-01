@@ -20,3 +20,7 @@ Thumbs.db
 
 # Mise
 .mise.lock
+
+# Neovim
+.session
+.nvimlog

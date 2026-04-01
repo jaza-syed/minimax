@@ -1,0 +1,32 @@
+/* Overall container with box shadow */
+.picker-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Each item on top of the container */
+.picker-menu__item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #111111;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Hover highlight */
+.picker-menu__item:hover,
+.picker-menu__item:focus-visible {
+  background: #f2f2f2;
+  outline: none;
+}
