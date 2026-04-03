@@ -1,16 +1,16 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { type LfoData } from '@/patchGraphNodes/lfo';
 
 // Set up node data type
-export type NoteNodeData = {
-  frequency: number;
-  duration: number;
+export type LfoNodeData = {
+  data: LfoData;
   onFrequencyChange: (frequency: number) => void;
-  onDurationChange: (duration: number) => void;
+  onGainChange: (gain: number) => void;
 };
-export type NoteFlowNode = Node<NoteNodeData, 'note'>;
+export type LfoFlowNode = Node<LfoNodeData, 'lfo'>;
 
 // Actual component
-export function NoteNode({ data }: NodeProps<NoteFlowNode>) {
+export function LfoNode({ data }: NodeProps<LfoFlowNode>) {
   return (
     // Basic styling
     <div
@@ -23,19 +23,20 @@ export function NoteNode({ data }: NodeProps<NoteFlowNode>) {
       }}
     >
       {/* Handles */}
-      <Handle type="target" position={Position.Left} id="event-in" />
-      <Handle type="source" position={Position.Right} id="audio-out" />
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>NOTE</div>
-      {/* Parameters */}
+      <Handle type="source" position={Position.Right} id="output" />
+      <Handle type="target" position={Position.Top} id="frequency" />
+      {/* Set the title */}
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>lfo</div>
+      {/* BPM input */}
       <label style={{ display: 'block', fontSize: 12 }}>
-        Frequency: {data.frequency}
+        Frequency: {data.data.frequency}
+        {/* Link the input to the actual data type */}
         <input
           className="nodrag"
           type="range"
-          min={0.01}
-          max={20000}
-          step={0.01}
-          value={data.frequency}
+          min={60}
+          max={12000}
+          value={data.data.frequency}
           onChange={(event) =>
             data.onFrequencyChange(Number(event.target.value))
           }
@@ -43,17 +44,15 @@ export function NoteNode({ data }: NodeProps<NoteFlowNode>) {
         />
       </label>
       <label style={{ display: 'block', fontSize: 12 }}>
-        Duration: {data.duration}
+        gain: {data.data.gain}
+        {/* Link the input to the actual data type */}
         <input
           className="nodrag"
           type="range"
-          min={0.01}
-          max={2}
-          step={0.01}
-          value={data.duration}
-          onChange={(event) =>
-            data.onDurationChange(Number(event.target.value))
-          }
+          min={0}
+          max={1000}
+          value={data.data.gain}
+          onChange={(event) => data.onGainChange(Number(event.target.value))}
           style={{ display: 'block', width: '100%', marginTop: 4 }}
         />
       </label>

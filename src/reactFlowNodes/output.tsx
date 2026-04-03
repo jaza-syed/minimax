@@ -20,12 +20,11 @@ export function OutputNode({ id: _id, data }: NodeProps<OutputFlowNode>) {
       }}
     >
       {/* Set the input on the right*/}
-      <Handle type="target" position={Position.Left} id="input" />
+      <Handle type="target" position={Position.Left} id="inlet" />
       <div style={{ fontWeight: 600, marginBottom: 8 }}>OUTPUT</div>
 
       <label style={{ display: 'block', width: '100%', fontSize: 12 }}>
         {data.destination}
-        {/* TODO: Add connection callbacks */}
       </label>
     </div>
   );

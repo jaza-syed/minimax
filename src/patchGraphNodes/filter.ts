@@ -8,11 +8,15 @@ export class FilterPatchGraphNode implements PatchGraphNode {
   kind: string;
   ports: Map<string, PatchGraphPort>;
   filter: BiquadFilterNode;
+  cutoff: ConstantSourceNode;
 
   constructor(context: AudioContext, data: FilterData) {
     this.kind = 'filter';
     this.filter = context.createBiquadFilter(); // gain defaults to 1
-    this.filter.frequency.value = data.cutoff;
+    this.cutoff = context.createConstantSource();
+    this.cutoff.offset.value = data.cutoff;
+    this.cutoff.connect(this.filter.frequency);
+    this.cutoff.start();
     this.ports = new Map([
       [
         'inlet',

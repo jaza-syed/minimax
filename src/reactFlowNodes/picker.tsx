@@ -6,12 +6,20 @@ import {
 import { type NoteFlowNode, NoteNode } from './note';
 import { type MetroFlowNode, MetroNode } from './metro';
 import { type OutputFlowNode, OutputNode } from './output';
+import { type LfoFlowNode, LfoNode } from './lfo';
+import { type FilterFlowNode, FilterNode } from './filter';
 
 import './picker.css';
 
 // Type-safe picker catalog by inferring "type" and "data" from the flow
 // node types
-type AnyFlowNode = MetroFlowNode | NoteFlowNode | OutputFlowNode;
+export type AnyFlowNode =
+  | MetroFlowNode
+  | NoteFlowNode
+  | OutputFlowNode
+  | FilterFlowNode
+  | LfoFlowNode;
+
 export type FlowNodeMenuEntry = AnyFlowNode extends infer N
   ? N extends FlowNode
     ? {
@@ -26,6 +34,8 @@ export const FlowNodeMenuEntries: FlowNodeMenuEntry[] = [
   { type: 'metro', label: 'Metro', node: MetroNode },
   { type: 'note', label: 'Note', node: NoteNode },
   { type: 'audioOutput', label: 'AudioOutput', node: OutputNode },
+  { type: 'filter', label: 'Filter', node: FilterNode },
+  { type: 'lfo', label: 'LFO', node: LfoNode },
 ];
 
 // UI component

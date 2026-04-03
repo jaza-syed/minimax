@@ -158,6 +158,8 @@ export class WebAudioRuntime implements Runtime {
       const events = node.schedule(window);
       allEvents = allEvents.concat(
         events.map((event) => {
+          // Transport calls schedule and provides the transportStartTime
+          // Which acts as the bridge between "wall" time and transport time
           event.event.time += transportStartTime;
           return {
             event: event.event,
@@ -194,10 +196,40 @@ export class WebAudioRuntime implements Runtime {
   }
 
   setParamImmediate(
-    _handle: PatchGraphNodeHandle,
-    _param: string,
+    handle: PatchGraphNodeHandle,
+    param: string,
+    value: number,
   ): Result<void, string> {
-    // TODO: Look up node and parameter and set it directly
-    return err('');
+    if (!this.nodes.has(handle)) return err(`Invalid handle: ${handle}`);
+    const node = this.nodes.get(handle)!;
+    switch (node.kind) {
+      case 'metro':
+        {
+          const metroNode = node as MetroPatchGraphNode;
+          if (param == 'bpm') metroNode.bpm = value;
+        }
+        break;
+      case 'note':
+        {
+          const noteNode = node as NotePatchGraphNode;
+          if (param == 'frequency') noteNode.frequency = value;
+          if (param == 'duration') noteNode.duration = value;
+        }
+        break;
+      case 'lfo':
+        {
+          const lfoNode = node as LfoPatchGraphNode;
+          if (param == 'frequency') lfoNode.osc.frequency.value = value;
+          if (param == 'gain') lfoNode.gain.gain.value = value;
+        }
+        break;
+      case 'filter':
+        {
+          const filterNode = node as FilterPatchGraphNode;
+          if (param == 'cutoff') filterNode.cutoff.offset.value = value;
+        }
+        break;
+    }
+    return ok();
   }
 }

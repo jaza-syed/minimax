@@ -57,7 +57,7 @@ export class Transport implements Scheduler {
     this.isRunning_ = false;
   }
 
-  private async tick(): Promise<void> {
+  tick(): void {
     if (!this.isRunning_) {
       return;
     }
