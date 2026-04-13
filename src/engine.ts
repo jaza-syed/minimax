@@ -17,18 +17,41 @@ import { OutputPatchGraphNode } from './patchGraphNodes/output';
 import { LfoPatchGraphNode } from './patchGraphNodes/lfo';
 import { FilterPatchGraphNode } from './patchGraphNodes/filter';
 
+interface Connection {
+  from: PatchGraphPortId;
+  to: PatchGraphPortId;
+}
+
+function removeConnection(
+  connections: Set<Connection>,
+  outlet: PatchGraphPortId,
+  inlet: PatchGraphPortId,
+) {
+  for (const connection of connections) {
+    if (
+      connection.from.nodeHandle === outlet.nodeHandle &&
+      connection.from.portName === outlet.portName &&
+      connection.to.nodeHandle === inlet.nodeHandle &&
+      connection.to.portName === inlet.portName
+    ) {
+      connections.delete(connection);
+      break;
+    }
+  }
+}
+
 export class WebAudioRuntime implements Runtime {
   private nodes: Map<PatchGraphNodeHandle, PatchGraphNode>;
   private scheduledSources: Map<PatchGraphNodeHandle, ScheduledSourceNode>;
-  private audioConnections: { from: PatchGraphPortId; to: PatchGraphPortId }[];
-  private eventConnections: { from: PatchGraphPortId; to: PatchGraphPortId }[];
+  private audioConnections: Set<Connection>;
+  private eventConnections: Set<Connection>;
   private lastId: number = -1;
 
   constructor(private context: AudioContext) {
     this.nodes = new Map();
     this.scheduledSources = new Map();
-    this.audioConnections = [];
-    this.eventConnections = [];
+    this.audioConnections = new Set();
+    this.eventConnections = new Set();
   }
 
   async resume(): Promise<void> {
@@ -100,13 +123,13 @@ export class WebAudioRuntime implements Runtime {
                   outPort.outletIndex,
                   inPort.inletIndex,
                 );
-                this.audioConnections.push({ from: outlet, to: inlet });
+                this.audioConnections.add({ from: outlet, to: inlet });
               }
               break;
             case 'audio-param':
               {
                 outPort.node.connect(inPort.param, outPort.outletIndex);
-                this.audioConnections.push({ from: outlet, to: inlet });
+                this.audioConnections.add({ from: outlet, to: inlet });
               }
               break;
             default:
@@ -122,7 +145,7 @@ export class WebAudioRuntime implements Runtime {
                 if (outPort.event != inPort.event) {
                   return err('Invalid combination of event port types');
                 }
-                this.eventConnections.push({ from: outlet, to: inlet });
+                this.eventConnections.add({ from: outlet, to: inlet });
               }
               break;
             default:
@@ -137,16 +160,87 @@ export class WebAudioRuntime implements Runtime {
   }
 
   disconnect(
-    _outlet: PatchGraphPortId,
-    _inlet: PatchGraphPortId,
+    outlet: PatchGraphPortId,
+    inlet: PatchGraphPortId,
   ): Result<void, string> {
-    // TODO: Find connection and remove
-    return err('');
+    if (
+      !this.nodes.has(inlet.nodeHandle) ||
+      !this.nodes.get(inlet.nodeHandle)?.ports.has(inlet.portName) ||
+      !this.nodes.has(outlet.nodeHandle) ||
+      !this.nodes.get(outlet.nodeHandle)?.ports.has(outlet.portName)
+    ) {
+      return err('Port does not exist');
+    }
+    const outPort = this.nodes
+      .get(outlet.nodeHandle)!
+      .ports.get(outlet.portName)!;
+    const inPort = this.nodes.get(inlet.nodeHandle)!.ports.get(inlet.portName)!;
+
+    switch (outPort.type) {
+      case 'audio-outlet':
+        {
+          switch (inPort.type) {
+            case 'audio-inlet':
+              {
+                outPort.node.disconnect(
+                  inPort.node,
+                  outPort.outletIndex,
+                  inPort.inletIndex,
+                );
+                removeConnection(this.audioConnections, outlet, inlet);
+              }
+              break;
+            case 'audio-param':
+              {
+                outPort.node.disconnect(inPort.param, outPort.outletIndex);
+                removeConnection(this.audioConnections, outlet, inlet);
+              }
+              break;
+            default:
+              return err('Invalid combination of port types');
+          }
+        }
+        break;
+      case 'event-outlet':
+        {
+          switch (inPort.type) {
+            case 'event-inlet':
+              {
+                if (outPort.event != inPort.event) {
+                  return err('Invalid combination of event port types');
+                }
+                removeConnection(this.eventConnections, outlet, inlet);
+              }
+              break;
+            default:
+              return err('Invalid combination of port types');
+          }
+        }
+        break;
+      default:
+        return err('Invalid combination of port types');
+    }
+    return ok();
   }
 
-  deleteNode(_handle: PatchGraphNodeHandle): Result<void, string> {
-    // TODO: Delete node and all connections
-    return err('');
+  deleteNode(handle: PatchGraphNodeHandle): Result<void, string> {
+    for (const { from: outlet, to: inlet } of structuredClone(
+      this.audioConnections,
+    )) {
+      if (handle == outlet.nodeHandle || handle == inlet.nodeHandle) {
+        this.disconnect(outlet, inlet);
+      }
+    }
+    for (const { from: outlet, to: inlet } of structuredClone(
+      this.eventConnections,
+    )) {
+      if (handle == outlet.nodeHandle || handle == inlet.nodeHandle) {
+        this.disconnect(outlet, inlet);
+      }
+    }
+    this.nodes.delete(handle);
+    this.scheduledSources.delete(handle);
+    return ok();
   }
 
   schedule(

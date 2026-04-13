@@ -7,11 +7,12 @@ import {
   addEdge,
   Background,
   type XYPosition,
-  type Node,
   type Edge,
   type NodeChange,
   type EdgeChange,
   type Connection,
+  type EdgeMouseHandler,
+  type NodeMouseHandler,
   type ReactFlowInstance,
   type ReactFlowProps,
 } from '@xyflow/react';
@@ -19,31 +20,57 @@ import '@xyflow/react/dist/style.css';
 
 // First-party
 import {
-  NodeCreateMenu,
-  FlowNodeMenuEntries,
-  type FlowNodeMenuEntry,
   type AnyFlowNode,
-} from './reactFlowNodes/picker';
+  type FlowNodeByType,
+  flowNodeTypes,
+  isFlowNodeOfType,
+  type FlowNodeMenuElement,
+  type FlowNodeType,
+} from './flow/nodeRegistry';
+import { NodeCreateMenu } from './flow/NodeCreateMenu';
+import {
+  EdgeContextMenu,
+  type EdgeContextMenuAction,
+} from './flow/EdgeContextMenu';
+import {
+  NodeContextMenu,
+  type NodeContextMenuAction,
+} from './flow/NodeContextMenu';
+import { createFlowNode } from './flow/createFlowNode';
 import { WebAudioRuntime } from './engine';
 import { Transport, TransportRuntime } from './scheduler';
-import type { MetroNodeData } from './reactFlowNodes/metro';
-import type { NoteNodeData } from './reactFlowNodes/note';
-import type { OutputNodeData } from './reactFlowNodes/output';
-import type { FilterNodeData } from './reactFlowNodes/filter';
-import type { LfoNodeData } from './reactFlowNodes/lfo';
+import type { PatchGraphNodeHandle, PatchGraphPortId } from './types';
 
 // Set up initial data
-const initialNodes: Node[] = [];
+const initialNodes: AnyFlowNode[] = [];
 const initialEdges: Edge[] = [];
 
-type MenuState = {
+type CreateMenuState = {
   screenPosition: XYPosition;
   flowPosition: XYPosition;
 } | null;
 
-const nodeTypes: NonNullable<ReactFlowProps['nodeTypes']> = Object.fromEntries(
-  FlowNodeMenuEntries.map((entry) => [entry.type, entry.node] as const),
-);
+type NodeContextMenuState = {
+  screenPosition: XYPosition;
+  nodeId: PatchGraphNodeHandle;
+} | null;
+
+type EdgeContextMenuState = {
+  screenPosition: XYPosition;
+  edgeId: string;
+  outlet: PatchGraphPortId;
+  inlet: PatchGraphPortId;
+} | null;
+
+function updateTypedNode<K extends FlowNodeType>(
+  node: FlowNodeByType[K],
+  updater: (data: FlowNodeByType[K]['data']) => FlowNodeByType[K]['data'],
+): FlowNodeByType[K] {
+  return {
+    ...node,
+    data: updater(node.data),
+  };
+}
 
 export default function App() {
   // Set up main variables
@@ -61,28 +88,32 @@ export default function App() {
   // Generic react boilerplate for the ReactFlow graph
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState(initialEdges);
-  const [menu, setMenu] = useState<MenuState>(null);
-  const updateNodeData = useCallback(
-    (
-      nodeId: string,
-      updater: (data: AnyFlowNode['data']) => AnyFlowNode['data'],
-    ) => {
-      setNodes((nodesSnapshot) =>
-        nodesSnapshot.map((node) =>
-          node.id === nodeId
-            ? {
-                ...node,
-                data: updater(node.data as AnyFlowNode['data']),
-              }
+  const [createMenu, setCreateMenu] = useState<CreateMenuState>(null);
+  const [nodeContextMenu, setNodeContextMenu] =
+    useState<NodeContextMenuState>(null);
+  const [edgeContextMenu, setEdgeContextMenu] =
+    useState<EdgeContextMenuState>(null);
+  // updateNodeData is a helper function that allows calls `setNodes` on
+  // any node type. This keeps the graph UI in sync with the audio node runtime
+  const updateNodeData = useCallback(function updateNodeData<
+    K extends FlowNodeType,
+  >(
+    nodeId: string,
+    type: K,
+    updater: (data: FlowNodeByType[K]['data']) => FlowNodeByType[K]['data'],
+  ) {
+    setNodes((nodesSnapshot) =>
+      nodesSnapshot.map(
+        (node): AnyFlowNode =>
+          node.id === nodeId && isFlowNodeOfType(node, type)
+            ? updateTypedNode(node, updater)
             : node,
-        ),
-      );
-    },
-    [],
-  );
+      ),
+    );
+  }, []);
   // More boilerplate to set up callbacks
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) =>
+    (changes: NodeChange<AnyFlowNode>[]) =>
       setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot)),
     [],
   );
@@ -111,7 +142,9 @@ export default function App() {
   // Must be nullable because we are creating the instance in this component
   // So we dont have access to it until the comoponent is created
   // This is then set in `onInit()`
-  const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+  const reactFlowRef = useRef<ReactFlowInstance<AnyFlowNode, Edge> | null>(
+    null,
+  );
   const runtimeRef = useRef<WebAudioRuntime | null>(null);
   const transportRef = useRef<Transport | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -119,172 +152,128 @@ export default function App() {
 
   // Menu creation / distruction callbacks
   const onPaneContextMenu: NonNullable<ReactFlowProps['onPaneContextMenu']> =
-    useCallback(
-      (event) => {
-        event.preventDefault();
-        const screenPosition = { x: event.clientX, y: event.clientY };
-        const flowPosition = reactFlowRef.current!.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        });
-        setMenu({
-          screenPosition,
-          flowPosition,
-        });
-      },
-      [setMenu],
-    );
-  const onPaneClick = useCallback(() => setMenu(null), [setMenu]);
+    useCallback((event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const screenPosition = { x: event.clientX, y: event.clientY };
+      const flowPosition = reactFlowRef.current!.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      setNodeContextMenu(null);
+      setEdgeContextMenu(null);
+      setCreateMenu({
+        screenPosition,
+        flowPosition,
+      });
+    }, []);
+  const onNodeContextMenu: NodeMouseHandler<AnyFlowNode> = useCallback(
+    (event, node) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCreateMenu(null);
+      setEdgeContextMenu(null);
+      setNodeContextMenu({
+        screenPosition: { x: event.clientX, y: event.clientY },
+        nodeId: node.id,
+      });
+    },
+    [],
+  );
+  const onEdgeContextMenu: EdgeMouseHandler<Edge> = useCallback(
+    (event, edge) => {
+      if (!edge.sourceHandle || !edge.targetHandle) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setCreateMenu(null);
+      setNodeContextMenu(null);
+      setEdgeContextMenu({
+        screenPosition: { x: event.clientX, y: event.clientY },
+        edgeId: edge.id,
+        outlet: {
+          nodeHandle: edge.source,
+          portName: edge.sourceHandle,
+        },
+        inlet: {
+          nodeHandle: edge.target,
+          portName: edge.targetHandle,
+        },
+      });
+    },
+    [],
+  );
+  const onPaneClick = useCallback(() => {
+    setCreateMenu(null);
+    setNodeContextMenu(null);
+    setEdgeContextMenu(null);
+  }, []);
 
   // Menu click callback
-  const onMenuSelect = (entry: FlowNodeMenuEntry) => {
-    setMenu(null);
-    // TODO: Create a proper union type for this
-    // And then create the nodeData with the corresponding type
-    let nodeData: AnyFlowNode['data'];
-    let nodeId: string;
-    // We are kind of mapping flow nodes to patch graph nodes in this menu
-    switch (entry.type) {
-      case 'metro':
-        {
-          const data = { bpm: 120 };
-          const result = runtimeRef.current!.createNode({
-            type: 'metro',
-            data,
-          });
+  const onMenuClick = useCallback(
+    (element: FlowNodeMenuElement) => {
+      setCreateMenu(null);
+      if (!createMenu || !runtimeRef.current) return;
+
+      const node = createFlowNode({
+        element,
+        position: createMenu.flowPosition,
+        runtime: runtimeRef.current,
+        updateNodeData,
+      });
+      if (!node) return;
+
+      setNodes((nodes) => nodes.concat(node));
+    },
+    [createMenu, updateNodeData],
+  );
+  const onNodeContextMenuClick = useCallback(
+    (action: NodeContextMenuAction) => {
+      setNodeContextMenu(null);
+      if (!runtimeRef.current) return;
+
+      switch (action.type) {
+        case 'delete': {
+          const result = runtimeRef.current.deleteNode(action.nodeId);
           if (result.isErr()) return;
-          nodeData = {
-            data: data,
-            onBpmChange: (bpm: number) => {
-              runtimeRef.current?.setParamImmediate(result.value, 'bpm', bpm);
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as MetroNodeData),
-                data: {
-                  ...(nodeData as MetroNodeData).data,
-                  bpm,
-                },
-              }));
-            },
-          };
-          nodeId = result.value;
+
+          setNodes((nodes) =>
+            nodes.filter((node) => node.id !== action.nodeId),
+          );
+          setEdges((edges) =>
+            edges.filter(
+              (edge) =>
+                edge.source !== action.nodeId && edge.target !== action.nodeId,
+            ),
+          );
+          break;
         }
-        break;
-      case 'note':
-        {
-          const data = { frequency: 440, duration: 0.5 };
-          const result = runtimeRef.current!.createNode({ type: 'note', data });
+      }
+    },
+    [],
+  );
+  const onEdgeContextMenuClick = useCallback(
+    (action: EdgeContextMenuAction) => {
+      setEdgeContextMenu(null);
+      if (!runtimeRef.current) return;
+
+      switch (action.type) {
+        case 'delete': {
+          const result = runtimeRef.current.disconnect(
+            action.outlet,
+            action.inlet,
+          );
           if (result.isErr()) return;
-          nodeData = {
-            frequency: data.frequency,
-            duration: data.duration,
-            onFrequencyChange: (frequency: number) => {
-              runtimeRef.current?.setParamImmediate(
-                result.value,
-                'frequency',
-                frequency,
-              );
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as NoteNodeData),
-                frequency,
-              }));
-            },
-            onDurationChange: (duration: number) => {
-              runtimeRef.current?.setParamImmediate(
-                result.value,
-                'duration',
-                duration,
-              );
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as NoteNodeData),
-                duration,
-              }));
-            },
-          };
-          nodeId = result.value;
+
+          setEdges((edges) =>
+            edges.filter((edge) => edge.id !== action.edgeId),
+          );
+          break;
         }
-        break;
-      case 'filter':
-        {
-          const data = { cutoff: 440 };
-          const result = runtimeRef.current!.createNode({
-            type: 'filter',
-            data,
-          });
-          if (result.isErr()) return;
-          nodeData = {
-            data: data,
-            onCutoffChange: (cutoff) => {
-              runtimeRef.current?.setParamImmediate(
-                result.value,
-                'cutoff',
-                cutoff,
-              );
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as FilterNodeData),
-                data: {
-                  ...(nodeData as FilterNodeData).data,
-                  cutoff,
-                },
-              }));
-            },
-          };
-          nodeId = result.value;
-        }
-        break;
-      case 'lfo':
-        {
-          const data = { frequency: 50, gain: 1 };
-          const result = runtimeRef.current!.createNode({ type: 'lfo', data });
-          if (result.isErr()) return;
-          nodeData = {
-            data: data,
-            onFrequencyChange: (frequency: number) => {
-              runtimeRef.current?.setParamImmediate(
-                result.value,
-                'frequency',
-                frequency,
-              );
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as LfoNodeData),
-                data: {
-                  ...(nodeData as LfoNodeData).data,
-                  frequency,
-                },
-              }));
-            },
-            onGainChange: (gain: number) => {
-              runtimeRef.current?.setParamImmediate(result.value, 'gain', gain);
-              updateNodeData(result.value, (nodeData) => ({
-                ...(nodeData as LfoNodeData),
-                data: {
-                  ...(nodeData as LfoNodeData).data,
-                  gain,
-                },
-              }));
-            },
-          };
-          nodeId = result.value;
-        }
-        break;
-      case 'audioOutput':
-        {
-          const result = runtimeRef.current!.createNode({ type: 'output' });
-          if (result.isErr()) return;
-          const data: OutputNodeData = { destination: 'default' };
-          nodeData = data;
-          nodeId = result.value;
-        }
-        break;
-    }
-    setNodes((nodes) =>
-      nodes.concat({
-        id: nodeId,
-        type: entry.type,
-        position: menu!.flowPosition,
-        data: nodeData,
-      }),
-    );
-  };
+      }
+    },
+    [],
+  );
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
@@ -313,20 +302,38 @@ export default function App() {
         }}
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={flowNodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onPaneClick={onPaneClick}
         fitView
       >
         <Background />
       </ReactFlow>
-      {menu && (
+      {createMenu && (
         <NodeCreateMenu
-          position={menu.screenPosition}
-          onSelect={onMenuSelect}
+          position={createMenu.screenPosition}
+          onClick={onMenuClick}
+        />
+      )}
+      {nodeContextMenu && (
+        <NodeContextMenu
+          id={nodeContextMenu.nodeId}
+          position={nodeContextMenu.screenPosition}
+          onClick={onNodeContextMenuClick}
+        />
+      )}
+      {edgeContextMenu && (
+        <EdgeContextMenu
+          edgeId={edgeContextMenu.edgeId}
+          outlet={edgeContextMenu.outlet}
+          inlet={edgeContextMenu.inlet}
+          position={edgeContextMenu.screenPosition}
+          onClick={onEdgeContextMenuClick}
         />
       )}
     </div>
